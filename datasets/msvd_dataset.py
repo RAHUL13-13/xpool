@@ -21,24 +21,23 @@ class MSVDDataset(Dataset):
         self.img_transforms = img_transforms
         self.split_type = split_type
         db_file = 'data/MSVD/captions_msvd.json'
-        test_file = 'data/MSVD/test_list.txt'
-        train_file = 'data/MSVD/train_list.txt'
+        test_file = '/shared/home/v_rahul_pratap_singh/local_scratch/videoRetrieval/xpool/data/MSVD/test_list.txt'
+        train_file = '/shared/home/v_rahul_pratap_singh/local_scratch/videoRetrieval/xpool/data/MSVD/train_list.txt'
         self.vid2caption = load_json(db_file)
-
+        
         if split_type == 'train':
             self.train_vids = read_lines(train_file) 
             self._construct_all_train_pairs()
         else:
             self.test_vids = read_lines(test_file)
             self._construct_all_test_pairs()
-
-
+            
     def __getitem__(self, index):
         if self.split_type == 'train':
             video_path, caption, video_id = self._get_vidpath_and_caption_by_index_train(index)
         else:
             video_path, caption, video_id = self._get_vidpath_and_caption_by_index_test(index)
-
+            
         imgs, idxs = VideoCapture.load_frames_from_video(video_path, 
                                                          self.config.num_frames, 
                                                          self.config.video_sample_type)
@@ -46,21 +45,20 @@ class MSVDDataset(Dataset):
         # process images of video
         if self.img_transforms is not None:
             imgs = self.img_transforms(imgs)
-
+            
         ret = {
             'video_id': video_id,
             'video': imgs,
             'text': caption
         }
-
+        
         return ret
-
-
+    
     def _get_vidpath_and_caption_by_index_train(self, index):
         vid, caption = self.all_train_pairs[index]
         video_path = os.path.join(self.videos_dir, vid + '.avi')
         return video_path, caption, vid
-
+    
     def _get_vidpath_and_caption_by_index_test(self, index):
         vid, caption = self.all_test_pairs[index]
         video_path = os.path.join(self.videos_dir, vid + '.avi')

@@ -31,7 +31,6 @@ def sim_matrix_training(text_embeds, vid_embeds_pooled, pooling_type):
 def sim_matrix_inference(text_embeds_per_video_id, vid_embeds_pooled_per_video_id, pooling_type):
     """
     Computes the similarity matrix using pooled video frames using all texts per video
-
     Output
         sims: num_vids x max_text_per_vid x num_vids
     """

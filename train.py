@@ -9,8 +9,7 @@ from model.model_factory import ModelFactory
 from modules.metrics import t2v_metrics, v2t_metrics
 from modules.loss import LossFactory
 from trainer.trainer import Trainer
-from modules.optimization import AdamW, get_cosine_schedule_with_warmup
-
+from modules.optimization import AdamW, get_cosine_schedule_with_warmup 
 
 def main():
     config = AllConfig()
@@ -28,14 +27,18 @@ def main():
         random.seed(config.seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-
+        
     if config.huggingface:
-        from transformers import CLIPTokenizer
-        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", TOKENIZERS_PARALLELISM=False)
+        from transformers import CLIPTokenizer, FlaxCLIPVisionModel, CLIPProcessor
+        tokenizer1 = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", TOKENIZERS_PARALLELISM=False)
+        # tokenizer2 = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        
+        from transformers import BertTokenizer
+        tokenizer2 = BertTokenizer.from_pretrained('bert-base-uncased')
     else:
         from modules.tokenization_clip import SimpleTokenizer
         tokenizer = SimpleTokenizer()
-
+        
     train_data_loader = DataFactory.get_data_loader(config, split_type='train')
     valid_data_loader  = DataFactory.get_data_loader(config, split_type='test')
     model = ModelFactory.get_model(config)
@@ -63,14 +66,14 @@ def main():
                                                 num_training_steps=num_training_steps)
     
     loss = LossFactory.get_loss(config)
-
+    
     trainer = Trainer(model, loss, metrics, optimizer,
                       config=config,
                       train_data_loader=train_data_loader,
                       valid_data_loader=valid_data_loader,
                       lr_scheduler=scheduler,
                       writer=writer,
-                      tokenizer=tokenizer)
+                      tokenizer=[tokenizer1, tokenizer2])
 
     trainer.train()
 

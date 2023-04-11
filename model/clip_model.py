@@ -513,7 +513,7 @@ def load_clip(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda
         # loading saved state dict
         if jit:
             warnings.warn(f"File {model_path} is not a JIT archive. Loading as a state dict instead")
-            jit = False
+            ji    t = False
         state_dict = torch.load(model_path, map_location="cpu")
 
     if not jit:
