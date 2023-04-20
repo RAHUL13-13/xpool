@@ -21,7 +21,7 @@ class MSVDDataset(Dataset):
         self.img_transforms = img_transforms
         self.split_type = split_type
         db_file = 'data/MSVD/captions_msvd.json'
-        test_file = '/shared/home/v_rahul_pratap_singh/local_scratch/videoRetrieval/xpool/data/MSVD/test_list.txt'
+        test_file = '/shared/home/v_rahul_pratap_singh/local_scratch/videoRetrieval/xpool/data/MSVD/test_list_small.txt'
         train_file = '/shared/home/v_rahul_pratap_singh/local_scratch/videoRetrieval/xpool/data/MSVD/train_list.txt'
         self.vid2caption = load_json(db_file)
         

@@ -29,8 +29,12 @@ def main():
         torch.backends.cudnn.benchmark = False
 
     if config.huggingface:
-        from transformers import CLIPTokenizer
-        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", TOKENIZERS_PARALLELISM=False)
+        from transformers import CLIPTokenizer, FlaxCLIPVisionModel, CLIPProcessor
+        tokenizer1 = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32", TOKENIZERS_PARALLELISM=False)
+        # tokenizer2 = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        
+        from transformers import BertTokenizer
+        tokenizer2 = BertTokenizer.from_pretrained('bert-base-uncased')
     else:
         from modules.tokenization_clip import SimpleTokenizer
         tokenizer = SimpleTokenizer()
@@ -53,7 +57,7 @@ def main():
                       valid_data_loader=test_data_loader,
                       lr_scheduler=None,
                       writer=writer,
-                      tokenizer=tokenizer)
+                      tokenizer=[tokenizer1, tokenizer2])
 
     if config.load_epoch is not None:
         if config.load_epoch > 0:

@@ -59,18 +59,30 @@ class Trainer(BaseTrainer):
                 
             data['video'] = data['video'].to(self.device)
             
-            text_embeds_pooled, video_embeds_pooled, text_embeds, video_embeds, text_features_sequential, video_features_averaged  = self.model(data)
-            # print("IN TRAIN, coming from model tP vP", text_embeds_pooled.shape, video_embeds_pooled.shape)
+            text_embeds_pooled, video_embeds_pooled, text_embeds, video_embeds, text_features_sequential, video_features_non_seq  = self.model(data)
+            # print("IN TRAIN before loss calc, coming from model t tseq tP vP", text_embeds.shape, text_features_sequential.shape, text_embeds_pooled.shape, video_embeds_pooled.shape)
             
-            t = torch.diagonal(text_embeds_pooled)
-            t = t.permute(1,0)
+            # loss no.1 (between diag of conditioned t and conditioned v)
+            text_embeds_pooled_diag = torch.diagonal(text_embeds_pooled)
+            text_embeds_pooled_diag = text_embeds_pooled_diag.permute(1,0)
+            output1 = sim_matrix_training(text_embeds_pooled_diag, video_embeds_pooled, self.pooling_type)
+            L1 = self.loss(output1, self.model.clip.logit_scale)
             
-            output1 = sim_matrix_training(t, video_embeds_pooled, self.pooling_type)
-            loss = self.loss(output1, self.model.clip.logit_scale)
+            # loss no. 2 (between t and conditioned v)
+            # output_ori = sim_matrix_training(text_embeds, video_embeds_pooled, self.pooling_type)
+            # L2 = self.loss(output_ori, self.model.clip.logit_scale)
             
+            # loss no. 3 (between conditioned t and diag of conditioned v)
+            # video_embeds_pooled_diag = torch.diagonal(video_embeds_pooled)
+            # video_embeds_pooled_diag = video_embeds_pooled_diag.permute(1,0)
+            # output3 = sim_matrix_training(video_embeds_pooled_diag, text_embeds_pooled, self.pooling_type)
+            # L3 = self.loss(output3, self.model.clip.logit_scale)
+            
+            loss = L1#+L2
             loss.backward()
-            # print(text_embeds.size(), text_features_sequential.shape)
+            
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            
             self.optimizer.step()
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
@@ -123,7 +135,7 @@ class Trainer(BaseTrainer):
         text_embed_arr = []
         vid_embed_arr = []
         text_embed_seq_arr = [] # correct only
-        vid_embed_averaged_arr = []
+        vid_embed_non_seq_arr = []
         all_vid_ids = []
         
         with torch.no_grad():
@@ -144,24 +156,32 @@ class Trainer(BaseTrainer):
                     
                 data['video'] = data['video'].to(self.device)
                 
-                text_embed_pooled, vid_embed_pooled, text_embed, vid_embed, text_feature_sequential, video_feature_averaged = self.model(data, return_all_frames=True)
-                # print("IN VAL, coming from model tP vP", text_embed_pooled.shape, vid_embed_pooled.shape)
+                text_embed_pooled, vid_embed_pooled, text_embed, vid_embed, text_feature_sequential, video_features_non_seq = self.model(data, return_all_frames=True)
+                # print("IN val before loss calc, coming from model t tseq tP vP", text_embed.shape, text_feature_sequential.shape, text_embed_pooled.shape, vid_embed_pooled.shape)
                 
                 text_embed_arr.append(text_embed.cpu())
                 vid_embed_arr.append(vid_embed.cpu())
                 
-                # print(text_embed.size(), text_feature_sequential.shape)
                 text_embed_seq_arr.append(text_feature_sequential.cpu())
-                vid_embed_averaged_arr.append(video_feature_averaged.cpu())
+                vid_embed_non_seq_arr.append(video_features_non_seq.cpu())
                 
-                t = torch.diagonal(text_embed_pooled)
-                t = t.permute(1,0)
+                # loss 1
+                text_embed_pooled_diag = torch.diagonal(text_embed_pooled)
+                text_embed_pooled_diag = text_embed_pooled_diag.permute(1,0)
+                output1 = sim_matrix_training(text_embed_pooled_diag, vid_embed_pooled, self.pooling_type)
+                L1 = self.loss(output1, self.model.clip.logit_scale)
                 
-                output1 = sim_matrix_training(t, vid_embed_pooled, self.pooling_type)
+                # loss 2
+                # output_ori = sim_matrix_training(text_embed, vid_embed_pooled, self.pooling_type)
+                # L2 = self.loss(output_ori, self.model.clip.logit_scale)   
                 
-                curr_loss1 = self.loss(output1, self.model.clip.logit_scale)
+                # loss 3
+                # video_embeds_pooled_diag = torch.diagonal(vid_embed_pooled)
+                # video_embeds_pooled_diag = video_embeds_pooled_diag.permute(1,0)
+                # output3 = sim_matrix_training(video_embeds_pooled_diag, text_embed_pooled, self.pooling_type)
+                # L3 = self.loss(output3, self.model.clip.logit_scale)
                 
-                total_val_loss += curr_loss1.item()
+                total_val_loss += L1.item() # + L2.item()
                 
                 for v_id in data['video_id']:
                     all_vid_ids.append(v_id)
@@ -169,15 +189,15 @@ class Trainer(BaseTrainer):
             text_embeds = torch.cat(text_embed_arr)
             vid_embeds = torch.cat(vid_embed_arr)
             text_embeds_seq = torch.cat(text_embed_seq_arr)
-            vid_embeds_averaged = torch.cat(vid_embed_averaged_arr)
+            video_features_non_seq = torch.cat(vid_embed_non_seq_arr)
             
             self.model.pools.cpu()
             # text_embed_pooled, vid_embeds_pooled = self.model.pools(text_embeds, vid_embeds)
-            # print(text_embeds.device, vid_embeds.device, vid_embeds_averaged.device, text_embeds_seq.device)
-            # print(text_embeds.shape, vid_embeds.shape, vid_embeds_averaged.shape, text_embeds_seq.shape)
+            # print(text_embeds.device, vid_embeds.device, video_features_non_seq.device, text_embeds_seq.device)
+            # print(text_embeds.shape, vid_embeds.shape, video_features_non_seq.shape, text_embeds_seq.shape)
             correct_pooled_text = torch.empty((0, 512), dtype=torch.float32)
             for ith in range(text_embeds.shape[0]):
-                _, text_embed_pooled = self.model.pools(torch.unsqueeze(text_embeds[ith], 0), torch.unsqueeze(vid_embeds[ith], 0), torch.unsqueeze(vid_embeds_averaged[ith], 0), torch.unsqueeze(text_embeds_seq[ith], 0))
+                _, text_embed_pooled = self.model.pools(torch.unsqueeze(text_embeds[ith], 0), torch.unsqueeze(vid_embeds[ith], 0), torch.unsqueeze(video_features_non_seq[ith], 0), torch.unsqueeze(text_embeds_seq[ith], 0))
                 one_correct_pooled_text = torch.diagonal(text_embed_pooled)
                 one_correct_pooled_text = one_correct_pooled_text.permute(1,0)
                 correct_pooled_text = torch.cat((correct_pooled_text, one_correct_pooled_text), dim=0)
@@ -186,14 +206,14 @@ class Trainer(BaseTrainer):
             
             # Since we have all pairs, remove duplicate videos when there's multiple captions per video
             vid_embeds_per_video_id = {}
-            vid_embed_averageds_per_video_id = {}
+            vid_embed_non_seq_per_video_id = {}
             for idx, v_id in enumerate(all_vid_ids):
                 if v_id not in vid_embeds_per_video_id:
                     vid_embeds_per_video_id[v_id] = vid_embeds[idx]
-                    vid_embed_averageds_per_video_id[v_id] = vid_embeds_averaged[idx]
+                    vid_embed_non_seq_per_video_id[v_id] = video_features_non_seq[idx]
             
             vid_embeds = torch.stack([vid_embeds_per_video_id[v_id] for v_id in vid_embeds_per_video_id])
-            vid_embeds_averaged = torch.stack([vid_embed_averageds_per_video_id[v_id] for v_id in vid_embed_averageds_per_video_id])
+            video_features_non_seq = torch.stack([vid_embed_non_seq_per_video_id[v_id] for v_id in vid_embed_non_seq_per_video_id])
             
             # print("IN VAL, before pool t v", text_embeds.shape, vid_embeds.shape)
             # IN VAL, before pool t v torch.Size([65, 512]) torch.Size([2, 12, 512])
@@ -201,10 +221,10 @@ class Trainer(BaseTrainer):
             # Pool frames for inference once we have all texts and videos
             self.model.pools.cpu()
             # text_embed_pooled, vid_embeds_pooled = self.model.pools(text_embeds, vid_embeds)
-            vid_embeds_pooled, _ = self.model.pools(text_embeds, vid_embeds, vid_embeds_averaged, text_embeds_seq)
-            self.model.pools.to(torch.device("cuda:7"))
+            vid_embeds_pooled, text_embed_pooled = self.model.pools(text_embeds, vid_embeds, video_features_non_seq, text_embeds_seq)
+            self.model.pools.to(torch.device("cuda:5"))
             
-            # print(vid_embeds_pooled.shape, text_embed_pooled.shape, text_embeds.shape, vid_embeds.shape)
+            print(vid_embeds_pooled.shape, text_embed_pooled.shape, text_embeds.shape, vid_embeds.shape)
             
             text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id = generate_embeds_per_video_id(correct_pooled_text, 
                     vid_embeds_pooled, all_vid_ids, self.pooling_type)
