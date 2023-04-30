@@ -3,7 +3,8 @@ import numpy as np
 import torch
 from collections import defaultdict, deque
 from trainer.base_trainer import BaseTrainer
-from modules.metrics import sim_matrix_training, sim_matrix_inference, generate_embeds_per_video_id
+from modules.metrics import sim_matrix_training, sim_matrix_inference, generate_embeds_per_video_id, \
+    sim_matrix_training_modified, sim_matrix_inference_modified, generate_embeds_per_video_id_modified
 from tqdm import tqdm
 
 
@@ -63,10 +64,10 @@ class Trainer(BaseTrainer):
             # print("IN TRAIN before loss calc, coming from model t tseq tP vP", text_embeds.shape, text_features_sequential.shape, text_embeds_pooled.shape, video_embeds_pooled.shape)
             
             # loss no.1 (between diag of conditioned t and conditioned v)
-            text_embeds_pooled_diag = torch.diagonal(text_embeds_pooled)
-            text_embeds_pooled_diag = text_embeds_pooled_diag.permute(1,0)
-            output1 = sim_matrix_training(text_embeds_pooled_diag, video_embeds_pooled, self.pooling_type)
-            L1 = self.loss(output1, self.model.clip.logit_scale)
+            # text_embeds_pooled_diag = torch.diagonal(text_embeds_pooled)
+            # text_embeds_pooled_diag = text_embeds_pooled_diag.permute(1,0)
+            # output1 = sim_matrix_training(text_embeds_pooled_diag, video_embeds_pooled, self.pooling_type)
+            # L1 = self.loss(output1, self.model.clip.logit_scale)
             
             # loss no. 2 (between t and conditioned v)
             # output_ori = sim_matrix_training(text_embeds, video_embeds_pooled, self.pooling_type)
@@ -78,7 +79,11 @@ class Trainer(BaseTrainer):
             # output3 = sim_matrix_training(video_embeds_pooled_diag, text_embeds_pooled, self.pooling_type)
             # L3 = self.loss(output3, self.model.clip.logit_scale)
             
-            loss = L1#+L2
+            # loss no. 4 (between conditioned t and conditioned v)
+            output4 = sim_matrix_training_modified(video_embeds_pooled, text_embeds_pooled, self.pooling_type)
+            L4 = self.loss(output4, self.model.clip.logit_scale)
+            
+            loss = L4#+L1+L3
             loss.backward()
             
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -101,7 +106,7 @@ class Trainer(BaseTrainer):
                     epoch,
                     batch_idx,
                     num_steps-1,
-                    loss.detach().item()))
+                    loss.detach().item()), end= "   ")
 
             if batch_idx in eval_steps:
                 val_res = self._valid_epoch_step(epoch, batch_idx, num_steps-1)
@@ -166,10 +171,10 @@ class Trainer(BaseTrainer):
                 vid_embed_non_seq_arr.append(video_features_non_seq.cpu())
                 
                 # loss 1
-                text_embed_pooled_diag = torch.diagonal(text_embed_pooled)
-                text_embed_pooled_diag = text_embed_pooled_diag.permute(1,0)
-                output1 = sim_matrix_training(text_embed_pooled_diag, vid_embed_pooled, self.pooling_type)
-                L1 = self.loss(output1, self.model.clip.logit_scale)
+                # text_embed_pooled_diag = torch.diagonal(text_embed_pooled)
+                # text_embed_pooled_diag = text_embed_pooled_diag.permute(1,0)
+                # output1 = sim_matrix_training(text_embed_pooled_diag, vid_embed_pooled, self.pooling_type)
+                # L1 = self.loss(output1, self.model.clip.logit_scale)
                 
                 # loss 2
                 # output_ori = sim_matrix_training(text_embed, vid_embed_pooled, self.pooling_type)
@@ -181,7 +186,11 @@ class Trainer(BaseTrainer):
                 # output3 = sim_matrix_training(video_embeds_pooled_diag, text_embed_pooled, self.pooling_type)
                 # L3 = self.loss(output3, self.model.clip.logit_scale)
                 
-                total_val_loss += L1.item() # + L2.item()
+                # loss 4
+                output4 = sim_matrix_training_modified(vid_embed_pooled, text_embed_pooled, self.pooling_type)
+                L4 = self.loss(output4, self.model.clip.logit_scale)
+                
+                total_val_loss += L4.item() #+ L1.item() + L3.item()
                 
                 for v_id in data['video_id']:
                     all_vid_ids.append(v_id)
@@ -191,18 +200,18 @@ class Trainer(BaseTrainer):
             text_embeds_seq = torch.cat(text_embed_seq_arr)
             video_features_non_seq = torch.cat(vid_embed_non_seq_arr)
             
-            self.model.pools.cpu()
             # text_embed_pooled, vid_embeds_pooled = self.model.pools(text_embeds, vid_embeds)
-            # print(text_embeds.device, vid_embeds.device, video_features_non_seq.device, text_embeds_seq.device)
             # print(text_embeds.shape, vid_embeds.shape, video_features_non_seq.shape, text_embeds_seq.shape)
-            correct_pooled_text = torch.empty((0, 512), dtype=torch.float32)
-            for ith in range(text_embeds.shape[0]):
-                _, text_embed_pooled = self.model.pools(torch.unsqueeze(text_embeds[ith], 0), torch.unsqueeze(vid_embeds[ith], 0), torch.unsqueeze(video_features_non_seq[ith], 0), torch.unsqueeze(text_embeds_seq[ith], 0))
-                one_correct_pooled_text = torch.diagonal(text_embed_pooled)
-                one_correct_pooled_text = one_correct_pooled_text.permute(1,0)
-                correct_pooled_text = torch.cat((correct_pooled_text, one_correct_pooled_text), dim=0)
-            self.model.pools.cuda()
+            
+            # self.model.pools.cpu()
+            # correct_pooled_text = torch.empty((0, 512), dtype=torch.float32)
+            # for ith in range(text_embeds.shape[0]):
+                # _, text_embed_pooled = self.model.pools(torch.unsqueeze(text_embeds[ith], 0), torch.unsqueeze(vid_embeds[ith], 0), torch.unsqueeze(video_features_non_seq[ith], 0), torch.unsqueeze(text_embeds_seq[ith], 0))
+                # one_correct_pooled_text = torch.diagonal(text_embed_pooled)
+                # one_correct_pooled_text = one_correct_pooled_text.permute(1,0)
+                # correct_pooled_text = torch.cat((correct_pooled_text, one_correct_pooled_text), dim=0)
             # print(correct_pooled_text.shape)
+            # self.model.pools.cuda()
             
             # Since we have all pairs, remove duplicate videos when there's multiple captions per video
             vid_embeds_per_video_id = {}
@@ -215,21 +224,22 @@ class Trainer(BaseTrainer):
             vid_embeds = torch.stack([vid_embeds_per_video_id[v_id] for v_id in vid_embeds_per_video_id])
             video_features_non_seq = torch.stack([vid_embed_non_seq_per_video_id[v_id] for v_id in vid_embed_non_seq_per_video_id])
             
-            # print("IN VAL, before pool t v", text_embeds.shape, vid_embeds.shape)
-            # IN VAL, before pool t v torch.Size([65, 512]) torch.Size([2, 12, 512])
+            # print("IN VAL, before pool t v", text_embeds.shape, vid_embeds.shape) 
+            # torch.Size([65, 512]) torch.Size([2, 12, 512])
             
             # Pool frames for inference once we have all texts and videos
             self.model.pools.cpu()
             # text_embed_pooled, vid_embeds_pooled = self.model.pools(text_embeds, vid_embeds)
             vid_embeds_pooled, text_embed_pooled = self.model.pools(text_embeds, vid_embeds, video_features_non_seq, text_embeds_seq)
-            self.model.pools.to(torch.device("cuda:5"))
+            self.model.pools.to(torch.device("cuda:7"))
             
-            print(vid_embeds_pooled.shape, text_embed_pooled.shape, text_embeds.shape, vid_embeds.shape)
-            
-            text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id = generate_embeds_per_video_id(correct_pooled_text, 
+            # print(vid_embeds_pooled.shape, text_embed_pooled.shape, text_embeds.shape, vid_embeds.shape)
+            # print(all_vid_ids)
+            text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id = generate_embeds_per_video_id_modified(text_embed_pooled, 
                     vid_embeds_pooled, all_vid_ids, self.pooling_type)
             
-            sims = sim_matrix_inference(text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id, self.pooling_type)
+            sims = sim_matrix_inference_modified(text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id, self.pooling_type)
+            # print(sims.shape)
             
             total_val_loss = total_val_loss / len(self.valid_data_loader)
             

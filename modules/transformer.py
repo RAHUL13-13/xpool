@@ -63,6 +63,7 @@ class MultiHeadedAttention(nn.Module):
         o = self.out_proj(attention)
         return o
 
+
 class MultiHeadedAttention_(nn.Module):
     def __init__(self, config: Config):
         super(MultiHeadedAttention_, self).__init__()
@@ -87,28 +88,25 @@ class MultiHeadedAttention_(nn.Module):
         """
         
         num_texts, _ = video_features_averaged.shape
+        
         q = self.q_proj(video_features_averaged)
         q = q.reshape(num_texts, self.num_heads, self.head_dim)
-        
         q = q.permute(1,2,0)
 
         num_vids, num_frames, _ = text_features_sequential.shape
+        
         k = self.k_proj(text_features_sequential)
         k = k.reshape(num_vids, num_frames, self.num_heads, self.head_dim)
-        
         k = k.permute(0,2,1,3)
-
 
         v = self.v_proj(text_features_sequential)
         v = v.reshape(num_vids, num_frames, self.num_heads, self.head_dim)
-        
         v = v.permute(0,2,3,1)
         
-        
         attention_logits = k @ q
+        
         attention_logits = attention_logits / math.sqrt(self.head_dim)
         attention_weights = F.softmax(attention_logits, dim=2)
-
 
         attention = v @ attention_weights
         
@@ -118,8 +116,6 @@ class MultiHeadedAttention_(nn.Module):
         # num_texts x num_vids embed_dim
         o = self.out_proj(attention)
         return o
-
-
 
 
 class Transformer(nn.Module):
@@ -159,9 +155,14 @@ class Transformer(nn.Module):
         Input
             text_embeds: num_texts x embed_dim
             video_embeds: num_vids x num_frames x embed_dim
+            video_features_averaged:
+            text_features_sequential:
         Output
             out: num_vids x num_texts x embed_dim
+            out_:
         """
+        
+        # Cross Encoder 1
         text_embeds = self.layer_norm1(text_embeds)
         video_embeds = self.layer_norm1(video_embeds)
 
@@ -172,9 +173,8 @@ class Transformer(nn.Module):
         linear_out = self.linear_proj(attn_out)
         out = attn_out + self.dropout(linear_out)
         out = self.layer_norm3(out)
-
-
-
+        
+        # Cross Encoder 2
         video_features_averaged = self.layer_norm4(video_features_averaged)
         text_features_sequential = self.layer_norm4(text_features_sequential)
 

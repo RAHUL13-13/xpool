@@ -28,6 +28,32 @@ def sim_matrix_training(text_embeds, vid_embeds_pooled, pooling_type):
     return sims
 
 
+def sim_matrix_training_modified(vid_embeds_pooled, text_embed_pooled, pooling_type):
+    """
+    Computes the similarity matrix using pooled video frames
+    
+    Output
+        sims: num_texts x num_vids
+    """
+    text_embed_pooled = text_embed_pooled.permute(1, 0, 2)
+    
+    text_embed_pooled = text_embed_pooled / text_embed_pooled.norm(dim=-1, keepdim=True)
+    vid_embeds_pooled = vid_embeds_pooled / vid_embeds_pooled.norm(dim=-1, keepdim=True)
+    
+    num_vids, num_texts, embed_dim = vid_embeds_pooled.shape
+    
+    if pooling_type == 'avg':
+        sims = torch.mm(text_embed_pooled, vid_embeds_pooled.t())
+        
+    else:
+        vid_embeds_pooled = vid_embeds_pooled.reshape(num_vids*num_texts, embed_dim)
+        text_embed_pooled = text_embed_pooled.reshape(num_vids*num_texts, embed_dim)
+        
+        sims = torch.bmm(text_embed_pooled.unsqueeze(1), vid_embeds_pooled.unsqueeze(-1)).squeeze()
+        sims = sims.view(num_vids, num_texts)
+    return sims
+
+
 def sim_matrix_inference(text_embeds_per_video_id, vid_embeds_pooled_per_video_id, pooling_type):
     """
     Computes the similarity matrix using pooled video frames using all texts per video
@@ -61,6 +87,35 @@ def sim_matrix_inference(text_embeds_per_video_id, vid_embeds_pooled_per_video_i
     return sims
 
 
+def sim_matrix_inference_modified(text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id, pooling_type):
+    """
+    Computes the similarity matrix using pooled video frames using all texts per video
+    Output
+        sims: num_vids x max_text_per_vid x num_vids
+    """
+    text_embeds_pooled_per_video_id = text_embeds_pooled_per_video_id / text_embeds_pooled_per_video_id.norm(dim=-1, keepdim=True)
+    vid_embeds_pooled_per_video_id = vid_embeds_pooled_per_video_id / vid_embeds_pooled_per_video_id.norm(dim=-1, keepdim=True)
+
+    if pooling_type == 'avg':
+
+        sims = text_embeds_pooled_per_video_id @ vid_embeds_pooled_per_video_id.t()
+
+    else:
+        # text_embeds_per_video_id -> 
+        # vid_embeds_pooled_per_video_id -> num_vids x num_vids x max_text_per_vid x embed_dim
+        num_vids, _, max_text_per_vid, embed_dim = text_embeds_pooled_per_video_id.shape
+
+        vid_embeds_pooled_per_video_id = vid_embeds_pooled_per_video_id.view(num_vids*max_text_per_vid*num_vids, embed_dim)
+        
+        text_embeds_pooled_per_video_id = text_embeds_pooled_per_video_id.view(num_vids*max_text_per_vid*num_vids, embed_dim)
+
+        sims = torch.bmm(text_embeds_pooled_per_video_id.unsqueeze(1), vid_embeds_pooled_per_video_id.unsqueeze(-1)).squeeze()
+        
+        sims = sims.view(num_vids, max_text_per_vid, num_vids)
+        
+    return sims
+
+
 def generate_embeds_per_video_id(text_embeds, vid_embeds_pooled, all_vid_ids, pooling_type):
     # Construct dictionary of text embeds per unique video id
     text_embeds_per_video_id = {}
@@ -73,6 +128,7 @@ def generate_embeds_per_video_id(text_embeds, vid_embeds_pooled, all_vid_ids, po
 
     for v_id in text_embeds_per_video_id:
         text_embeds_per_video_id[v_id] = torch.stack(text_embeds_per_video_id[v_id])
+        # print("shape", text_embeds_per_video_id[v_id].shape)
 
     # num_vids x max_text_per_vid x embed_dim
     text_embeds_per_video_id = pad_and_stack_dict_to_tensor(text_embeds_per_video_id,
@@ -106,6 +162,61 @@ def generate_embeds_per_video_id(text_embeds, vid_embeds_pooled, all_vid_ids, po
         vid_embeds_pooled_per_video_id = torch.stack(vid_embeds_pooled_per_video_id)
 
     return text_embeds_per_video_id, vid_embeds_pooled_per_video_id
+
+
+def generate_embeds_per_video_id_modified(text_embeds_pooled, vid_embeds_pooled, all_vid_ids, pooling_type):
+    
+    text_embeds_pooled = text_embeds_pooled.permute(1, 0, 2)
+    
+    text_embeds_pooled_per_video_id = []
+
+    for i in range(text_embeds_pooled.shape[0]):
+        text_embeds_pooled_per_video_id.append({})
+        for idx, v_id in enumerate(all_vid_ids):
+            if v_id in text_embeds_pooled_per_video_id[i]:
+                text_embeds_pooled_per_video_id[i][v_id].append(text_embeds_pooled[i, idx, :])
+            else:
+                text_embeds_pooled_per_video_id[i][v_id] = [text_embeds_pooled[i, idx, :]]
+                    
+    for i in range(len(text_embeds_pooled_per_video_id)):
+            for v_id in text_embeds_pooled_per_video_id[i]:
+                text_embeds_pooled_per_video_id[i][v_id] = torch.stack(text_embeds_pooled_per_video_id[i][v_id])
+
+            # num_vids x max_text_per_vid x embed_dim
+            text_embeds_pooled_per_video_id[i] = pad_and_stack_dict_to_tensor(text_embeds_pooled_per_video_id[i],
+                    text_embeds_pooled_per_video_id[i].keys(), text_embeds_pooled.shape[-1])
+
+    # num_vids x num_vids x max_text_per_vid x embed_dim
+    text_embeds_pooled_per_video_id = torch.stack(text_embeds_pooled_per_video_id)
+    
+    if pooling_type == 'avg':
+        # num_vids x embed_dim
+        vid_embeds_pooled_per_video_id = vid_embeds_pooled
+
+    else:
+        # Construct dictionary of video embeds for each text per video_id
+        vid_embeds_pooled_per_video_id = []
+
+        for i in range(vid_embeds_pooled.shape[0]):
+            vid_embeds_pooled_per_video_id.append({})
+            for idx, v_id in enumerate(all_vid_ids):
+                if v_id in vid_embeds_pooled_per_video_id[i]:
+                    vid_embeds_pooled_per_video_id[i][v_id].append(vid_embeds_pooled[i, idx, :])
+                else:
+                    vid_embeds_pooled_per_video_id[i][v_id] = [vid_embeds_pooled[i, idx, :]]
+
+        for i in range(len(vid_embeds_pooled_per_video_id)):
+            for v_id in vid_embeds_pooled_per_video_id[i]:
+                vid_embeds_pooled_per_video_id[i][v_id] = torch.stack(vid_embeds_pooled_per_video_id[i][v_id])
+
+            # num_vids x max_text_per_vid x embed_dim
+            vid_embeds_pooled_per_video_id[i] = pad_and_stack_dict_to_tensor(vid_embeds_pooled_per_video_id[i],
+                    vid_embeds_pooled_per_video_id[i].keys(), vid_embeds_pooled.shape[-1])
+
+        # num_vids x num_vids x max_text_per_vid x embed_dim
+        vid_embeds_pooled_per_video_id = torch.stack(vid_embeds_pooled_per_video_id)
+
+    return text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id
 
 
 def t2v_metrics(sims):
