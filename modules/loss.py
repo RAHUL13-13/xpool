@@ -16,7 +16,6 @@ class CLIPLoss(nn.Module):
         # print(sims.shape)
         logit_scale = logit_scale.exp()
         logits = sims * logit_scale
-        
         t2v_log_sm = F.log_softmax(logits, dim=1)
         t2v_neg_ce = torch.diag(t2v_log_sm)
         t2v_loss = -t2v_neg_ce.mean()

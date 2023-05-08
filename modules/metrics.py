@@ -35,6 +35,7 @@ def sim_matrix_training_modified(vid_embeds_pooled, text_embed_pooled, pooling_t
     Output
         sims: num_texts x num_vids
     """
+    # print(vid_embeds_pooled.shape, text_embed_pooled.shape)
     text_embed_pooled = text_embed_pooled.permute(1, 0, 2)
     
     text_embed_pooled = text_embed_pooled / text_embed_pooled.norm(dim=-1, keepdim=True)
@@ -49,6 +50,7 @@ def sim_matrix_training_modified(vid_embeds_pooled, text_embed_pooled, pooling_t
         vid_embeds_pooled = vid_embeds_pooled.reshape(num_vids*num_texts, embed_dim)
         text_embed_pooled = text_embed_pooled.reshape(num_vids*num_texts, embed_dim)
         
+        # print(text_embed_pooled.unsqueeze(1).shape, vid_embeds_pooled.unsqueeze(-1).shape)
         sims = torch.bmm(text_embed_pooled.unsqueeze(1), vid_embeds_pooled.unsqueeze(-1)).squeeze()
         sims = sims.view(num_vids, num_texts)
     return sims
@@ -106,13 +108,13 @@ def sim_matrix_inference_modified(text_embeds_pooled_per_video_id, vid_embeds_po
         num_vids, _, max_text_per_vid, embed_dim = text_embeds_pooled_per_video_id.shape
 
         vid_embeds_pooled_per_video_id = vid_embeds_pooled_per_video_id.view(num_vids*max_text_per_vid*num_vids, embed_dim)
-        
+
         text_embeds_pooled_per_video_id = text_embeds_pooled_per_video_id.view(num_vids*max_text_per_vid*num_vids, embed_dim)
 
         sims = torch.bmm(text_embeds_pooled_per_video_id.unsqueeze(1), vid_embeds_pooled_per_video_id.unsqueeze(-1)).squeeze()
-        
-        sims = sims.view(num_vids, max_text_per_vid, num_vids)
-        
+
+        sims = sims.reshape(num_vids, max_text_per_vid*num_vids).t().view(num_vids, max_text_per_vid, num_vids)
+
     return sims
 
 

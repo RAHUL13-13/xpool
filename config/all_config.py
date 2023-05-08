@@ -53,6 +53,7 @@ class AllConfig(Config):
         parser.add_argument('--transformer_dropout', type=float, default=0.3, help='Dropout prob. in the transformer pooling')
 
         # system parameters
+        parser.add_argument('--gpu', type=str, default='7')
         parser.add_argument('--num_workers', type=int, default=8)
         parser.add_argument('--seed', type=int, default=24, help='Random seed')
         parser.add_argument('--no_tensorboard', action='store_true', default=False)

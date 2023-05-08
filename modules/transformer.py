@@ -78,29 +78,29 @@ class MultiHeadedAttention_(nn.Module):
         self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
     
-    def forward(self, video_features_averaged, text_features_sequential):
+    def forward(self, video_features_non_seq, text_features_sequential):
         """
         Input
-            video_features_averaged: num_vids x embed_dim
+            video_features_non_seq: num_vids x embed_dim
             text_features_sequential: num_texts x num_tokens x embed_dim
         Output
-            o: num_vids x num_texts x embed_dim
+            o: num_texts x num_vids xembed_dim
         """
         
-        num_texts, _ = video_features_averaged.shape
+        num_vids, _ = video_features_non_seq.shape
         
-        q = self.q_proj(video_features_averaged)
-        q = q.reshape(num_texts, self.num_heads, self.head_dim)
+        q = self.q_proj(video_features_non_seq)
+        q = q.reshape(num_vids, self.num_heads, self.head_dim)
         q = q.permute(1,2,0)
 
-        num_vids, num_frames, _ = text_features_sequential.shape
+        num_texts, num_tokens, _ = text_features_sequential.shape
         
         k = self.k_proj(text_features_sequential)
-        k = k.reshape(num_vids, num_frames, self.num_heads, self.head_dim)
+        k = k.reshape(num_texts, num_tokens, self.num_heads, self.head_dim)
         k = k.permute(0,2,1,3)
 
         v = self.v_proj(text_features_sequential)
-        v = v.reshape(num_vids, num_frames, self.num_heads, self.head_dim)
+        v = v.reshape(num_texts, num_tokens, self.num_heads, self.head_dim)
         v = v.permute(0,2,3,1)
         
         attention_logits = k @ q
@@ -111,7 +111,7 @@ class MultiHeadedAttention_(nn.Module):
         attention = v @ attention_weights
         
         attention = attention.permute(0,3,1,2)
-        attention = attention.reshape(num_vids, num_texts, self.embed_dim)
+        attention = attention.reshape(num_texts, num_vids, self.embed_dim)
 
         # num_texts x num_vids embed_dim
         o = self.out_proj(attention)
@@ -136,7 +136,8 @@ class Transformer(nn.Module):
         self.layer_norm4 = nn.LayerNorm(self.embed_dim)
         self.layer_norm5 = nn.LayerNorm(self.embed_dim)
         self.layer_norm6 = nn.LayerNorm(self.embed_dim)
-        self.dropout = nn.Dropout(dropout)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
 
         self._init_parameters()
 
@@ -150,16 +151,16 @@ class Transformer(nn.Module):
                     param.data.fill_(0.)
 
 
-    def forward(self, text_embeds, video_embeds, video_features_averaged, text_features_sequential):
+    def forward(self, text_embeds, video_embeds, video_features_non_seq, text_features_sequential):
         """
         Input
             text_embeds: num_texts x embed_dim
             video_embeds: num_vids x num_frames x embed_dim
-            video_features_averaged:
-            text_features_sequential:
+            video_features_non_seq: num_vids x embed_dim
+            text_features_sequential: num_texts x num_tokens x embed_dim
         Output
             out: num_vids x num_texts x embed_dim
-            out_:
+            out_: num_texts x num_vids x embed_dim
         """
         
         # Cross Encoder 1
@@ -171,19 +172,43 @@ class Transformer(nn.Module):
         attn_out = self.layer_norm2(attn_out)
 
         linear_out = self.linear_proj(attn_out)
-        out = attn_out + self.dropout(linear_out)
+        out = attn_out + self.dropout1(linear_out)
         out = self.layer_norm3(out)
         
         # Cross Encoder 2
-        video_features_averaged = self.layer_norm4(video_features_averaged)
+        video_features_non_seq = self.layer_norm4(video_features_non_seq)
         text_features_sequential = self.layer_norm4(text_features_sequential)
 
         # num_vids x num_texts x embed_dim
-        attn_out_ = self.cross_attn_(video_features_averaged, text_features_sequential)
+        attn_out_ = self.cross_attn_(video_features_non_seq, text_features_sequential)
         attn_out_ = self.layer_norm5(attn_out_)
 
         linear_out_ = self.linear_proj_(attn_out_)
-        out_ = attn_out_ + self.dropout(linear_out_)
+        out_ = attn_out_ + self.dropout2(linear_out_)
         out_ = self.layer_norm6(out_)
 
         return out, out_
+    
+
+class TransformerEncoderWithCLS(nn.Module):
+    def __init__(self, config: Config):
+        super().__init__()
+        self.embed_dim = config.embed_dim
+        self.num_layers = 2
+        self.num_heads = 16
+        self.feedforward_dim = 2048
+        self.cls_token = nn.Parameter(torch.randn(1, 1, self.embed_dim))
+        self.transformer_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(self.embed_dim, self.num_heads, self.feedforward_dim, dropout=0.3), self.num_layers)
+
+    def forward(self, video_embed_sequential):
+        # Add the cls token to the input sequence
+        CLS_video_sequential_embed = torch.cat((self.cls_token.repeat(video_embed_sequential.shape[0], 1, 1), video_embed_sequential), dim=1)
+        
+        # Pass the input through the transformer encoder
+        output = self.transformer_encoder(CLS_video_sequential_embed)
+        
+        # Extract the embedding corresponding to the cls token
+        non_seq_video_embed = output[:, 0, :]
+        
+        return non_seq_video_embed
