@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from config.base_config import Config
 
+# attention module to condition video by querying text
 class MultiHeadedAttention(nn.Module):
     def __init__(self, config: Config):
         super(MultiHeadedAttention, self).__init__()
@@ -26,7 +27,6 @@ class MultiHeadedAttention(nn.Module):
         Output
             o: num_vids x num_texts x embed_dim
         """
-        # print("pooling text, vid", text_embeds.shape, video_embeds.shape)
         num_texts, _ = text_embeds.shape
         # num_texts x embed_dim
         q = self.q_proj(text_embeds)
@@ -63,10 +63,10 @@ class MultiHeadedAttention(nn.Module):
         o = self.out_proj(attention)
         return o
 
-
-class MultiHeadedAttention_(nn.Module):
+# attention module to condition text by querying video
+class MultiHeadedAttention2(nn.Module):
     def __init__(self, config: Config):
-        super(MultiHeadedAttention_, self).__init__()
+        super(MultiHeadedAttention2, self).__init__()
         self.embed_dim = config.embed_dim
         self.num_heads = config.num_mha_heads
         assert self.embed_dim % self.num_heads == 0
@@ -125,11 +125,11 @@ class Transformer(nn.Module):
         dropout = config.transformer_dropout
 
         self.cross_attn = MultiHeadedAttention(config)
-        self.cross_attn_ = MultiHeadedAttention_(config)
+        self.cross_attn_ = MultiHeadedAttention2(config)
 
         self.linear_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.linear_proj_ = nn.Linear(self.embed_dim, self.embed_dim)
-            
+        
         self.layer_norm1 = nn.LayerNorm(self.embed_dim)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim)
         self.layer_norm3 = nn.LayerNorm(self.embed_dim)
@@ -202,13 +202,21 @@ class TransformerEncoderWithCLS(nn.Module):
             nn.TransformerEncoderLayer(self.embed_dim, self.num_heads, self.feedforward_dim, dropout=0.3), self.num_layers)
 
     def forward(self, video_embed_sequential):
+        # input batch_size x frames x embed_size
+        
         # Add the cls token to the input sequence
+        # batch_size x frames+1 x embed_size
         CLS_video_sequential_embed = torch.cat((self.cls_token.repeat(video_embed_sequential.shape[0], 1, 1), video_embed_sequential), dim=1)
         
+        # frames+1 x batch_size x embed_size
+        CLS_video_sequential_embed = CLS_video_sequential_embed.permute(1, 0, 2)
+        
         # Pass the input through the transformer encoder
+        # frames+1 x batch_size x embed_size
         output = self.transformer_encoder(CLS_video_sequential_embed)
         
         # Extract the embedding corresponding to the cls token
-        non_seq_video_embed = output[:, 0, :]
+        # batch_size x embed_size
+        non_seq_video_embed = output[0, :, :]
         
         return non_seq_video_embed

@@ -22,8 +22,6 @@ class CLIPTransformer(nn.Module):
         config.pooling_type = 'transformer'
         self.pools = Transformer(config)
         self.linear_layer = torch.nn.Linear(768, config.embed_dim)
-        self.linear_layer2 = torch.nn.Linear(768, config.embed_dim)
-        # self.linear_layer3 = torch.nn.Linear(config.num_frames*config.embed_dim, config.embed_dim)
         
         self.TransformerEncoderWithCLS = TransformerEncoderWithCLS(config)
         
@@ -50,7 +48,7 @@ class CLIPTransformer(nn.Module):
         # batch_size x num_tokens x 768_embed_size
         text_features_sequential = self.bert_model(**text_data_sequential).last_hidden_state
         # batch_size x num_tokens x 512_embed_size
-        text_features_sequential = self.linear_layer(text_features_sequential)     
+        text_features_sequential = self.linear_layer(text_features_sequential)
         
         # When using CLIP, for sequential video embedding, unflatten video_features
         # batch_size x num frames x embed size

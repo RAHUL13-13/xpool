@@ -66,9 +66,9 @@ class Trainer(BaseTrainer):
             
             # loss (between conditioned t and conditioned v)
             output = sim_matrix_training_modified(video_embeds_pooled, text_embeds_pooled, self.pooling_type)
-            L4 = self.loss(output, self.model.clip.logit_scale)
+            L1 = self.loss(output, self.model.clip.logit_scale)
             
-            loss = L4 #+L1+L3
+            loss = L1
             loss.backward()
             
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -154,9 +154,9 @@ class Trainer(BaseTrainer):
                 vid_embed_non_seq_arr.append(video_features_non_seq.cpu())
                 
                 output = sim_matrix_training_modified(vid_embed_pooled, text_embed_pooled, self.pooling_type)
-                L4 = self.loss(output, self.model.clip.logit_scale)
+                L1 = self.loss(output, self.model.clip.logit_scale)
                 
-                total_val_loss += L4.item() #+ L1.item() + L3.item()
+                total_val_loss += L1.item() #+ L1.item() + L3.item()
                 
                 for v_id in data['video_id']:
                     all_vid_ids.append(v_id)
@@ -184,7 +184,6 @@ class Trainer(BaseTrainer):
             self.model.pools.cpu()
             vid_embeds_pooled, text_embed_pooled = self.model.pools(text_embeds, vid_embeds, video_features_non_seq, text_embeds_seq)
             # print(vid_embeds_pooled.shape, text_embed_pooled.shape)
-            
             self.model.pools.to(torch.device("cuda:"+self.config.gpu))
             
             text_embeds_pooled_per_video_id, vid_embeds_pooled_per_video_id = generate_embeds_per_video_id_modified(text_embed_pooled, 
