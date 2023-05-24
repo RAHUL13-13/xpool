@@ -13,7 +13,6 @@ class CLIPLoss(nn.Module):
             sims: n x n (text is dim-0)
             logit_scale: 1 x 1
         """
-        # print(sims.shape)
         logit_scale = logit_scale.exp()
         logits = sims * logit_scale
         
